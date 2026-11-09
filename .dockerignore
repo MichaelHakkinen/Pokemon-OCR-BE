@@ -1,0 +1,63 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Build outputs
+dist
+build
+*.tsbuildinfo
+
+# Environment files — never bake secrets into the image. Runtime config comes
+# from the server's api.env (env_file in deploy/docker-compose.prod.yml).
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+coverage
+*.test.ts
+*.spec.ts
+test
+**/__tests__
+
+# Documentation
+README.md
+*.md
+!node_modules/**/*.md
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Misc
+.editorconfig
+.eslintrc.js
+.prettierrc
+# tsconfig files are needed for build
+# tsconfig.json
+# tsconfig.build.json
+
+# Logs
+logs
+*.log
+
+# Generated files (will be built in container)
+src/generated

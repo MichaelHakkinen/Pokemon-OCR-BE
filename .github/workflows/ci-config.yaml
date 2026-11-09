@@ -1,0 +1,88 @@
+name: CI config
+
+# Resolves CI/CD settings for the other workflows. Job-level `if:` can't read
+# workflow `env:`, so the values are exposed as job outputs instead.
+#
+# Precedence per key: repository variable (if set) -> .github/ci.env -> default.
+
+on:
+  workflow_call:
+    outputs:
+      docker_enabled:
+        description: "'true' when Docker build/push/deploy should run"
+        value: ${{ jobs.resolve.outputs.docker_enabled }}
+      swr_org:
+        description: 'SWR organization (namespace) for the image'
+        value: ${{ jobs.resolve.outputs.swr_org }}
+      image_name:
+        description: 'Image repository name'
+        value: ${{ jobs.resolve.outputs.image_name }}
+      deploy_dir:
+        description: 'Directory on the server that holds the deployment'
+        value: ${{ jobs.resolve.outputs.deploy_dir }}
+
+jobs:
+  resolve:
+    name: Resolve flags
+    runs-on: ubuntu-latest
+    outputs:
+      docker_enabled: ${{ steps.flags.outputs.docker_enabled }}
+      swr_org: ${{ steps.flags.outputs.swr_org }}
+      image_name: ${{ steps.flags.outputs.image_name }}
+      deploy_dir: ${{ steps.flags.outputs.deploy_dir }}
+    steps:
+      - name: Checkout CI config
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/ci.env
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve flags
+        id: flags
+        env:
+          VAR_DOCKER_ENABLED: ${{ vars.DOCKER_ENABLED }}
+          VAR_SWR_ORG: ${{ vars.SWR_ORG }}
+          VAR_IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+          VAR_DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+        run: |
+          # resolve KEY DEFAULT -> prints "value<TAB>source"
+          resolve() {
+            key=$1 default=$2
+            var_value=$(printenv "VAR_$key" || true)
+            # Last KEY=... line in ci.env, without quotes/whitespace/CR.
+            file_value=$(grep -E "^[[:space:]]*$key=" .github/ci.env 2>/dev/null \
+              | tail -n1 | cut -d= -f2- | tr -d "\"' \r" || true)
+            if [ -n "$var_value" ]; then printf '%s\trepository variable' "$var_value"
+            elif [ -n "$file_value" ]; then printf '%s\t.github/ci.env' "$file_value"
+            else printf '%s\tdefault' "$default"; fi
+          }
+          fail() { echo "::error title=Invalid .github/ci.env::$1"; exit 1; }
+
+          IFS=$'\t' read -r docker docker_src <<< "$(resolve DOCKER_ENABLED false)"
+          IFS=$'\t' read -r swr_org swr_org_src <<< "$(resolve SWR_ORG your-org)"
+          IFS=$'\t' read -r image_name image_name_src <<< "$(resolve IMAGE_NAME nest-api)"
+          IFS=$'\t' read -r deploy_dir deploy_dir_src <<< "$(resolve DEPLOY_DIR /opt/app/api)"
+
+          # Only an explicit "true" (any case) turns Docker on.
+          [ "$(echo "$docker" | tr '[:upper:]' '[:lower:]')" = "true" ] && enabled=true || enabled=false
+
+          # Names end up in image references and remote paths — keep them simple.
+          [[ "$swr_org" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || fail "SWR_ORG '$swr_org': use lowercase letters, digits, . _ -"
+          [[ "$image_name" =~ ^[a-z0-9][a-z0-9._/-]*$ ]] || fail "IMAGE_NAME '$image_name': use lowercase letters, digits, . _ - /"
+          [[ "$deploy_dir" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail "DEPLOY_DIR '$deploy_dir': must be an absolute path without spaces"
+
+          {
+            echo "docker_enabled=$enabled"
+            echo "swr_org=$swr_org"
+            echo "image_name=$image_name"
+            echo "deploy_dir=$deploy_dir"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "| Setting | Value | From |"
+            echo "|---|---|---|"
+            echo "| DOCKER_ENABLED | $enabled | $docker_src |"
+            echo "| SWR_ORG | $swr_org | $swr_org_src |"
+            echo "| IMAGE_NAME | $image_name | $image_name_src |"
+            echo "| DEPLOY_DIR | $deploy_dir | $deploy_dir_src |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "DOCKER_ENABLED=$enabled ($docker_src) SWR_ORG=$swr_org IMAGE_NAME=$image_name DEPLOY_DIR=$deploy_dir"

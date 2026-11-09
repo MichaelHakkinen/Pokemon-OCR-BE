@@ -1,0 +1,333 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Admin {
+  id          String    @id @default(uuid()) @db.Uuid
+  fullname    String    @db.VarChar(255)
+  // stored lowercase (NormalizeEmail); unique incl. soft-deleted rows, like username
+  email       String?   @unique @db.VarChar(255)
+  phoneNumber String    @db.VarChar(255)
+  username    String    @unique @db.VarChar(255)
+  password    String    @db.VarChar(255)
+  avatar      String?   @db.Text
+  isActive    Boolean   @default(true)
+  createdAt   DateTime? @db.Timestamp(6)
+  updatedAt   DateTime? @db.Timestamp(6)
+  deletedAt   DateTime? @db.Timestamp(6)
+
+  adminGroupMembers  AdminGroupMember[]
+  AdminRefreshToken  AdminRefreshToken[]
+  errorLogs          ErrorLog[]
+  Log                Log[]
+  AdminResetPassword AdminResetPassword[]
+
+  @@map("admins")
+}
+
+model AdminResetPassword {
+  id                  String    @id @default(uuid()) @db.Uuid
+  adminId             String    @db.Uuid
+  // SHA-256 hex digest of the OTP — the plaintext code is never stored
+  otp                 String    @db.Text
+  failedAttempts      Int       @default(0)
+  otpExpiresAt        DateTime  @db.Timestamp(6)
+  lastOtpSentAt       DateTime  @db.Timestamp(6)
+  otpVerifiedAt       DateTime? @db.Timestamp(6)
+  resetToken          String?   @db.Text
+  resetTokenExpiresAt DateTime? @db.Timestamp(6)
+  createdAt           DateTime? @db.Timestamp(6)
+  updatedAt           DateTime? @db.Timestamp(6)
+  deletedAt           DateTime? @db.Timestamp(6)
+
+  admin Admin @relation(fields: [adminId], references: [id])
+
+  @@map("admin_reset_passwords")
+}
+
+model AdminRefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  adminId   String   @db.Uuid
+  // Stable across rotations: identifies one login on one device. Carried in
+  // the access token as `sid` so the guard can check this exact session.
+  sessionId String   @default(uuid()) @db.Uuid
+  // SHA-256 hex digest of the refresh token — the raw token is never stored
+  token     String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  admin Admin @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([sessionId])
+  @@map("admin_refresh_tokens")
+}
+
+model Module {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique @db.VarChar(100)
+  isActive  Boolean   @default(true)
+  createdAt DateTime? @db.Timestamp(6)
+  updatedAt DateTime? @db.Timestamp(6)
+  deletedAt DateTime? @db.Timestamp(6)
+
+  rules     ModuleRule[]
+  errorLogs ErrorLog[]
+  Log       Log[]
+
+  @@map("modules")
+}
+
+model ModuleRule {
+  id          String    @id @default(uuid()) @db.Uuid
+  moduleId    String    @db.Uuid
+  name        String    @db.VarChar(100)
+  description String?   @db.Text
+  createdAt   DateTime? @db.Timestamp(6)
+  updatedAt   DateTime? @db.Timestamp(6)
+  deletedAt   DateTime? @db.Timestamp(6)
+
+  module           Module             @relation(fields: [moduleId], references: [id])
+  adminGroupAccess AdminGroupAccess[]
+
+  @@unique([moduleId, name])
+  @@index([moduleId])
+  @@map("module_rules")
+}
+
+model AdminGroup {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique @db.VarChar(100)
+  isActive  Boolean   @default(true)
+  createdAt DateTime? @db.Timestamp(6)
+  updatedAt DateTime? @db.Timestamp(6)
+  deletedAt DateTime? @db.Timestamp(6)
+
+  admins  AdminGroupMember[]
+  modules AdminGroupAccess[]
+
+  @@map("admin_groups")
+}
+
+model AdminGroupMember {
+  id           String    @id @default(uuid()) @db.Uuid
+  adminGroupId String    @db.Uuid
+  adminId      String    @db.Uuid
+  createdAt    DateTime? @db.Timestamp(6)
+  updatedAt    DateTime? @db.Timestamp(6)
+
+  adminGroup AdminGroup @relation(fields: [adminGroupId], references: [id])
+  admin      Admin      @relation(fields: [adminId], references: [id])
+
+  @@unique([adminId, adminGroupId])
+  @@map("admin_group_members")
+}
+
+model AdminGroupAccess {
+  id           String    @id @default(uuid()) @db.Uuid
+  adminGroupId String    @db.Uuid
+  moduleRuleId String    @db.Uuid
+  createdAt    DateTime? @db.Timestamp(6)
+  updatedAt    DateTime? @db.Timestamp(6)
+
+  adminGroup AdminGroup @relation(fields: [adminGroupId], references: [id])
+  moduleRule ModuleRule @relation(fields: [moduleRuleId], references: [id])
+
+  @@unique([adminGroupId, moduleRuleId])
+  @@map("admin_group_access")
+}
+
+model User {
+  id          String    @id @default(uuid()) @db.Uuid
+  fullname    String    @db.VarChar(255)
+  // stored lowercase (NormalizeEmail); unique incl. soft-deleted rows, like username
+  email       String?   @unique @db.VarChar(255)
+  phoneNumber String    @db.VarChar(255)
+  username    String    @unique @db.VarChar(255)
+  password    String    @db.VarChar(255)
+  avatar      String?   @db.Text
+  isActive    Boolean   @default(true)
+  createdAt   DateTime? @db.Timestamp(6)
+  updatedAt   DateTime? @db.Timestamp(6)
+  deletedAt   DateTime? @db.Timestamp(6)
+
+  UserRefreshToken  UserRefreshToken[]
+  UserResetPassword UserResetPassword[]
+
+  @@map("users")
+}
+
+model UserResetPassword {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @db.Uuid
+  // SHA-256 hex digest of the OTP — the plaintext code is never stored
+  otp                 String    @db.Text
+  failedAttempts      Int       @default(0)
+  otpExpiresAt        DateTime  @db.Timestamp(6)
+  lastOtpSentAt       DateTime  @db.Timestamp(6)
+  otpVerifiedAt       DateTime? @db.Timestamp(6)
+  resetToken          String?   @db.Text
+  resetTokenExpiresAt DateTime? @db.Timestamp(6)
+  createdAt           DateTime? @db.Timestamp(6)
+  updatedAt           DateTime? @db.Timestamp(6)
+  deletedAt           DateTime? @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_reset_passwords")
+}
+
+model UserRefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  // Stable across rotations: identifies one login on one device. Carried in
+  // the access token as `sid` so the guard can check this exact session.
+  sessionId String   @default(uuid()) @db.Uuid
+  // SHA-256 hex digest of the refresh token — the raw token is never stored
+  token     String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("user_refresh_tokens")
+}
+
+model Banner {
+  id        String    @id @default(uuid()) @db.Uuid
+  title     String?   @db.VarChar(255)
+  subtitle  String?   @db.VarChar(255)
+  mediaUrl  String    @db.Text
+  urlTarget String?   @db.Text
+  ordinal   Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime? @db.Timestamp(6)
+  updatedAt DateTime? @db.Timestamp(6)
+  deletedAt DateTime? @db.Timestamp(6)
+
+  @@map("banners")
+}
+
+model FAQ {
+  id        String    @id @default(uuid()) @db.Uuid
+  parentId  String?   @db.Uuid
+  text1     String    @db.Text
+  text2     String    @db.Text
+  ordinal   Int       @default(0)
+  level     Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime? @db.Timestamp(6)
+  updatedAt DateTime? @db.Timestamp(6)
+  deletedAt DateTime? @db.Timestamp(6)
+
+  parent   FAQ?  @relation("FAQParentChild", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children FAQ[] @relation("FAQParentChild")
+
+  @@map("faqs")
+}
+
+model ErrorLog {
+  id           String    @id @default(uuid()) @db.Uuid
+  endpoint     String?   @db.Text
+  errorMessage String?   @db.Text
+  adminId      String?   @db.Uuid
+  moduleId     String?   @db.Uuid
+  targetId     String?   @db.Uuid
+  remarks      String?   @db.Text
+  ipAddress    String?   @db.VarChar(45)
+  userAgent    String?   @db.Text
+  createdAt    DateTime? @db.Timestamp(6)
+  updatedAt    DateTime? @db.Timestamp(6)
+
+  admin  Admin?  @relation(fields: [adminId], references: [id])
+  module Module? @relation(fields: [moduleId], references: [id])
+
+  @@index([adminId])
+  @@index([moduleId])
+  @@map("error_logs")
+}
+
+model Log {
+  id          String    @id @default(uuid()) @db.Uuid
+  logDetailId String    @db.Uuid
+  adminId     String    @db.Uuid
+  moduleId    String?   @db.Uuid
+  targetId    String?   @db.VarChar(100)
+  notes       String?   @db.Text
+  valueBefore String?   @db.Text
+  valueAfter  String?   @db.Text
+  url         String?   @db.Text
+  ipAddress   String?   @db.VarChar(50)
+  userAgent   String?   @db.Text
+  createdAt   DateTime? @db.Timestamp(6)
+  updatedAt   DateTime? @db.Timestamp(6)
+
+  logDetail LogDetail @relation(fields: [logDetailId], references: [id])
+  admin     Admin     @relation(fields: [adminId], references: [id])
+  modules   Module?   @relation(fields: [moduleId], references: [id])
+
+  @@map("logs")
+}
+
+model LogDetail {
+  id        String   @id @default(uuid()) @db.Uuid
+  action    String   @unique @db.VarChar(100)
+  createdAt DateTime @default(now()) @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @db.Timestamp(6)
+
+  Log Log[]
+
+  @@map("log_details")
+}
+
+model GlobalConfig {
+  id        String    @id @default(uuid()) @db.Uuid
+  key       String    @unique @db.VarChar(255)
+  value     String?   @db.Text
+  createdAt DateTime? @db.Timestamp(6)
+  updatedAt DateTime? @db.Timestamp(6)
+
+  @@index([key])
+  @@map("global_configs")
+}
+
+model MailRelayLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  method          String?  @db.VarChar(10)
+  url             String?  @db.Text
+  recipient       String?  @db.Text
+  subject         String?  @db.Text
+  templateName    String?  @db.VarChar(100)
+  requestHeaders  String?  @db.Text
+  requestBody     String?  @db.Text
+  responseStatus  Int?
+  responseHeaders String?  @db.Text
+  responseBody    String?  @db.Text
+  isSuccess       Boolean  @default(false)
+  errorMessage    String?  @db.Text
+  durationMs      Int?
+  createdAt       DateTime @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime @updatedAt @db.Timestamp(6)
+
+  @@index([recipient])
+  @@index([responseStatus])
+  @@index([createdAt])
+  @@map("mail_relay_logs")
+}

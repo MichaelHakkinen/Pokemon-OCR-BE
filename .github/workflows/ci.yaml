@@ -1,0 +1,123 @@
+name: CI
+
+# Runs on every PR into main and every push to a non-main branch.
+# Also reusable via workflow_call — deploy.yaml runs this as its verify gate,
+# so the exact same checks protect both merges and deployments.
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches-ignore:
+      - main
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  config:
+    name: Config
+    uses: ./.github/workflows/ci-config.yaml
+
+  quality:
+    name: Lint, Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Node 24 to match the runtime inside the production image (node:24-alpine).
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # No --fix in CI: the pipeline verifies what was committed, it never rewrites it.
+      - name: Lint
+        run: npx eslint .
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      # Advisory only for now — surfaces known CVEs as evidence for the contract's
+      # security-patching obligation. Flip continue-on-error off to make it a gate.
+      - name: Dependency audit (advisory)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
+  e2e:
+    name: E2E tests
+    # Runs alongside "Lint, Test & Build", so it adds no wall-clock time.
+    # Disposable Postgres, no Redis (exercises the in-memory fallback).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_e2e_test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Resets the throwaway database above, migrates and seeds it, then runs test/*.e2e-spec.ts
+      - name: E2E tests
+        run: npm run test:e2e
+
+  docker:
+    name: Docker build check
+    # PRs only: catches Dockerfile breakage before merge. Deploys do the real
+    # build-and-push in deploy.yaml, so re-building here would be redundant.
+    # Opt-in: runs only when DOCKER_ENABLED resolves to true (see
+    # .github/ci.env; a repository variable overrides it). Default: off.
+    needs: config
+    if: github.event_name == 'pull_request' && needs.config.outputs.docker_enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

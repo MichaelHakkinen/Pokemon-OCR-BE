@@ -1,0 +1,5 @@
+title,subtitle,mediaUrl,urlTarget,isActive
+Summer Sale Banner,Get 50% off on all items,http://picsum.photos/720/300,https://example.com/summer-sale,true
+Winter Collection,New arrivals for winter season,http://picsum.photos/720/300,https://example.com/winter,1
+Spring Discount,Limited time offer,http://picsum.photos/720/300,https://example.com/spring,yes
+Holiday Banner,Celebrate with us,http://picsum.photos/720/300,,1

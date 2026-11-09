@@ -1,0 +1,50 @@
+# Production compose file for the NestJS API on the BE/FE ECS server.
+# CI ships this to $DEPLOY_DIR/docker-compose.yml on every deploy, so the
+# server always runs the version reviewed in this repo — do not edit it on the server.
+#
+# Blue/green for zero-downtime deploys: two identical services on different host
+# ports. nginx points at exactly one of them via the upstream file
+# (/etc/nginx/conf.d/nest_api_upstream.conf); deploy.sh starts the idle color,
+# health-checks it, switches nginx, then stops the old color. Never run a bare
+# `docker compose up -d` here — always target one service, as deploy.sh does.
+#
+# Two env files live next to it on the server (NOT in git):
+#   .env      machine-managed compose vars — SWR_REGISTRY, SWR_ORG, IMAGE_NAME,
+#             BLUE_TAG, GREEN_TAG, ACTIVE_COLOR (deploy.sh owns these)
+#   api.env   human-managed application secrets (DATABASE_URL, JWT keys, ...),
+#             chmod 600, owned by the deploy user
+
+x-api: &api
+  restart: unless-stopped # manual stop of the idle color survives reboots
+  env_file: api.env
+  environment:
+    APP_PORT: 4000
+  extra_hosts:
+    # Redis runs as a separate host-level container bound to 127.0.0.1:6379
+    # (deploy/README.md §2.6). Set REDIS_HOST=host.docker.internal in api.env.
+    - 'host.docker.internal:host-gateway'
+  volumes:
+    - uploads:/app/src/public/uploads # persist DISK_STORAGE=local uploads across deploys
+  logging:
+    driver: json-file
+    options:
+      max-size: '50m'
+      max-file: '3'
+
+services:
+  api-blue:
+    <<: *api
+    image: ${SWR_REGISTRY}/${SWR_ORG}/${IMAGE_NAME:-pokemon-ocr-be}:${BLUE_TAG:-unset}
+    container_name: pokemon-ocr-be-blue
+    ports:
+      - '127.0.0.1:4001:4000' # localhost only — nginx is the single public entry point
+
+  api-green:
+    <<: *api
+    image: ${SWR_REGISTRY}/${SWR_ORG}/${IMAGE_NAME:-pokemon-ocr-be}:${GREEN_TAG:-unset}
+    container_name: pokemon-ocr-be-green
+    ports:
+      - '127.0.0.1:4002:4000'
+
+volumes:
+  uploads:

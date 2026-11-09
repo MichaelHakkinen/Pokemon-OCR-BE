@@ -1,0 +1,166 @@
+name: Deploy
+
+# Flow: verify (full CI) -> build & push image to Huawei SWR -> SSH into the BE/FE
+# ECS server and run deploy/deploy.sh (blue/green: pull idle color, migrate, health
+# check, switch nginx, stop old color — zero downtime, auto-revert on failure).
+#
+# Decision (2026-07): everything runs on GITHUB-HOSTED runners so no build load
+# ever touches the 4-core/14GB production server; it only pulls images from SWR.
+# SERVER_HOST must therefore accept SSH from the public internet (key-only auth,
+# deploy user, fail2ban — per the DevOps setup guide).
+#
+# Rollback / redeploy: run this workflow manually (workflow_dispatch) and enter an
+# existing SWR tag — verify and build are skipped and that tag is deployed as-is.
+#
+# Docker toggle: on push, the image build/push and the deploy only run when
+# DOCKER_ENABLED resolves to true — set it in .github/ci.env (committed), or
+# override with a repository variable of the same name. Default: false, so
+# pushes to main only run Verify. A manual run (workflow_dispatch) always
+# builds/deploys, since starting it is an explicit ask.
+#
+# Deployment target — SWR_ORG, IMAGE_NAME, DEPLOY_DIR — also comes from
+# .github/ci.env (resolved by ci-config.yaml), so a project sets it in one place.
+#
+# Full runbook (prerequisites, server setup, SWR, rollback): deploy/README.md.
+#
+# Required secrets (Settings -> Secrets and variables -> Actions):
+#   SWR_REGISTRY      swr.{region}.myhuaweicloud.com
+#   SWR_USERNAME      {region}@{AK}
+#   SWR_PASSWORD      long-term login key
+#   SERVER_HOST       BE/FE server address
+#   SERVER_USERNAME   deploy   (never root)
+#   SERVER_SSH_KEY    private key for the deploy user
+#   SERVER_PORT       SSH port
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Existing SWR image tag to deploy (rollback/redeploy). Leave empty to build from this commit.'
+        required: false
+        default: ''
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # never kill a deploy midway through migrations
+
+jobs:
+  config:
+    name: Config
+    uses: ./.github/workflows/ci-config.yaml
+
+  verify:
+    name: Verify
+    if: ${{ github.event_name == 'push' || inputs.image_tag == '' }}
+    uses: ./.github/workflows/ci.yaml
+
+  build-push:
+    name: Build & push to SWR
+    needs: [config, verify]
+    if: >-
+      ${{ (github.event_name == 'push' && needs.config.outputs.docker_enabled == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.image_tag == '') }}
+    runs-on: ubuntu-latest
+    env:
+      SWR_ORG: ${{ needs.config.outputs.swr_org }}
+      IMAGE_NAME: ${{ needs.config.outputs.image_name }}
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Check deployment settings
+        run: |
+          if [ "$SWR_ORG" = "your-org" ]; then
+            echo "::error title=SWR_ORG not set::Set SWR_ORG in .github/ci.env (or as a repository variable) before deploying — see deploy/README.md."
+            exit 1
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Immutable tag per commit — enables exact rollbacks and audit trails.
+      - name: Resolve image tag
+        id: meta
+        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to SWR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.SWR_REGISTRY }}
+          username: ${{ secrets.SWR_USERNAME }}
+          password: ${{ secrets.SWR_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.SWR_REGISTRY }}/${{ env.SWR_ORG }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to production
+    needs: [config, verify, build-push]
+    # Runs when the build succeeded, OR when a manual rollback tag was supplied
+    # (in which case verify/build-push are skipped). Skipped with build-push
+    # when DOCKER_ENABLED is off.
+    if: ${{ !cancelled() && (inputs.image_tag != '' || needs.build-push.result == 'success') }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_DIR: ${{ needs.config.outputs.deploy_dir }}
+    steps:
+      - name: Check deployment settings
+        if: ${{ needs.config.outputs.swr_org == 'your-org' }}
+        run: |
+          echo "::error title=SWR_ORG not set::Set SWR_ORG in .github/ci.env (or as a repository variable) before deploying — see deploy/README.md."
+          exit 1
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve tag to deploy
+        id: tag
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ needs.build-push.outputs.tag }}"
+          fi
+          echo "value=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Deploying tag: $TAG"
+
+      # Ship the versioned compose file + deploy script so the server always runs
+      # what is reviewed in this repo (deploy/ directory).
+      - name: Ship compose file and deploy script
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: 'deploy/docker-compose.prod.yml,deploy/deploy.sh'
+          target: ${{ env.DEPLOY_DIR }}
+          strip_components: 1
+
+      - name: Run deploy script
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          command_timeout: 15m
+          script: |
+            cd "${{ env.DEPLOY_DIR }}"
+            mv -f docker-compose.prod.yml docker-compose.yml
+            chmod +x deploy.sh
+            SWR_REGISTRY="${{ secrets.SWR_REGISTRY }}" \
+            SWR_ORG="${{ needs.config.outputs.swr_org }}" \
+            IMAGE_NAME="${{ needs.config.outputs.image_name }}" \
+              ./deploy.sh "${{ steps.tag.outputs.value }}"
