@@ -36,5 +36,23 @@ export const userSeed = async (prisma: PrismaClient) => {
     });
   }
 
+  // Fixed-id demo user the Flutter app uses via x-user-id while
+  // DEV_USER_HEADER_AUTH=true (no mobile login yet). Must match ApiService.mockUserId.
+  await prisma.user.upsert({
+    where: { username: 'demo' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000001',
+      username: 'demo',
+      fullname: 'Demo Collector',
+      email: 'demo@example.com',
+      phoneNumber: '+6281234567899',
+      password: hashedPassword,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+
   console.log('User accounts seeded.');
 };

@@ -36,7 +36,7 @@ export class OcrService {
 
       // Build native FormData with Blob for multipart file upload
       const formData = new FormData();
-      const blob = new Blob([file.buffer], { type: file.mimetype || 'image/jpeg' });
+      const blob = new Blob([new Uint8Array(file.buffer)], { type: file.mimetype || 'image/jpeg' });
       formData.append('image', blob, file.originalname || 'card.jpg');
 
       const url = new URL(`${this.ocrServiceUrl}/extract-card-text`);

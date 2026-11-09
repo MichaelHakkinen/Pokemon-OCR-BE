@@ -340,7 +340,7 @@ model MailRelayLog {
 // ==========================================
 
 model Set {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   code        String    @unique @db.VarChar(50) // e.g. "sv2a", "MEW", "SV-P", "151"
   name        String    @db.VarChar(255)
   series      String?   @db.VarChar(100)
@@ -359,7 +359,7 @@ model Set {
 }
 
 model Card {
-  id               String    @id @default(uuid()) @db.Uuid
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   setId            String    @db.Uuid
   collectorNumber  String    @db.VarChar(50) // "025/165", "TG04/TG30", "025"
   normalizedNumber String    @db.VarChar(50) // "025", "TG04"
@@ -383,7 +383,7 @@ model Card {
 }
 
 model CardTranslation {
-  id        String    @id @default(uuid()) @db.Uuid
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   cardId    String    @db.Uuid
   language  String    @db.VarChar(20) // "en", "ja", "id", "ko", "zh", "fr", "de", "es", "it"
   name      String    @db.VarChar(255) // "Pikachu", "ピカチュウ", "리자몽", "Dracaufeu"
@@ -397,11 +397,13 @@ model CardTranslation {
   @@index([cardId])
   @@index([language])
   @@index([name])
+  // pg_trgm index for fuzzy name search (SIMILARITY / ILIKE). Needs the pg_trgm extension.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "idx_card_translations_name_trgm")
   @@map("card_translations")
 }
 
 model UserCardCollection {
-  id           String    @id @default(uuid()) @db.Uuid
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   userId       String    @db.Uuid
   cardId       String    @db.Uuid
   condition    String    @default("NM") @db.VarChar(50) // Mint, Near Mint, Lightly Played, Played, Damaged
@@ -422,7 +424,7 @@ model UserCardCollection {
 }
 
 model ExportConfig {
-  id        String    @id @default(uuid()) @db.Uuid
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   userId    String?   @unique @db.Uuid // null = default system template, or user-specific override
   isEnabled Boolean   @default(true) // Pre-Export Confirmation / Survey Popup toggle
   fields    Json      // JSONB: array of field definitions [{ key, label, type, options, defaultValue, required }]

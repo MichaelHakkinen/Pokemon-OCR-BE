@@ -10,7 +10,9 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { CollectionUserGuard } from './collection-user.guard';
 import { Response } from 'express';
 import {
   ApiTags,
@@ -25,20 +27,22 @@ import { ResponseMessage } from 'src/common/decorators/response-message.decorato
 import { RawResponse } from 'src/common/decorators/response-message.decorator';
 
 @ApiTags('Collection & CSV Export')
+@ApiBearerAuth()
+@UseGuards(CollectionUserGuard)
 @Controller('collection')
 export class CollectionController {
   constructor(private readonly collectionService: CollectionService) {}
 
-  /**
-   * Helper to resolve userId from authenticated session or header for mobile client
-   */
+  /** The guard always sets req.user; never trust a raw header here. */
   private resolveUserId(req: any): string {
-    return req.user?.id || req.headers['x-user-id'] || '00000000-0000-0000-0000-000000000001';
+    const userId = req.user?.id;
+    if (!userId) throw new UnauthorizedException();
+    return userId;
   }
 
   @Get()
   @ApiOperation({ summary: 'Get current user card collection' })
-  @ResponseMessage('Collection fetched successfully')
+  @ResponseMessage('DATA_RETRIEVED_SUCCESS')
   async getCollection(@Req() req: any) {
     const userId = this.resolveUserId(req);
     return this.collectionService.getUserCollection(userId);
@@ -46,7 +50,7 @@ export class CollectionController {
 
   @Post()
   @ApiOperation({ summary: 'Add card to user collection with optional custom fields' })
-  @ResponseMessage('Card added to collection')
+  @ResponseMessage('DATA_CREATED_SUCCESS')
   async addToCollection(@Req() req: any, @Body() dto: AddToCollectionDto) {
     const userId = this.resolveUserId(req);
     return this.collectionService.addToCollection(userId, dto);
@@ -57,7 +61,7 @@ export class CollectionController {
     summary: 'Get pre-export survey popup configuration and toggle status',
     description: 'Returns whether popup is enabled and array of custom field definitions.',
   })
-  @ResponseMessage('Export config fetched successfully')
+  @ResponseMessage('DATA_RETRIEVED_SUCCESS')
   async getExportConfig(@Req() req: any) {
     const userId = this.resolveUserId(req);
     return this.collectionService.getExportConfig(userId);
@@ -67,7 +71,7 @@ export class CollectionController {
   @ApiOperation({
     summary: 'Update pre-export confirmation popup questions, options, and toggle state',
   })
-  @ResponseMessage('Export config updated successfully')
+  @ResponseMessage('DATA_UPDATED_SUCCESS')
   async updateExportConfig(@Req() req: any, @Body() dto: UpdateExportConfigDto) {
     const userId = this.resolveUserId(req);
     return this.collectionService.updateExportConfig(userId, dto);

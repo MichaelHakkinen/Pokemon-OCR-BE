@@ -1,4 +1,4 @@
-import { PrismaClient } from '../src/generated/prisma';
+import { PrismaClient } from '../../src/generated/prisma';
 
 export async function seedPokemonCards(prisma: any) {
   console.log('Seeding Pokemon Sets, Cards, and Multilingual Translations...');

@@ -28,7 +28,7 @@ export class OcrController {
 
   @Post('scan')
   @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Card scanned and processed successfully')
+  @ResponseMessage('DATA_RETRIEVED_SUCCESS')
   @ApiOperation({
     summary: 'Scan and resolve Pokémon trading card from image',
     description:

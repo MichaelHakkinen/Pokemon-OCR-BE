@@ -1,3 +1,8 @@
+-- Extensions used below (uuid_generate_v4, gin_trgm_ops). Created here, not only
+-- in docker/postgres/init.sql, so existing volumes and Prisma's shadow database get them too.
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
 -- CreateTable sets
 CREATE TABLE IF NOT EXISTS "sets" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
