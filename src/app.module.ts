@@ -32,6 +32,8 @@ import { BannerModule } from './core/admin/banner/banner.module';
 import { FAQModule } from './core/admin/faq/faq.module';
 import { GlobalConfigModule } from './core/admin/global-config/global-config.module';
 import { HealthModule } from './health/health.module';
+import { OcrModule } from './ocr/ocr.module';
+import { CollectionModule } from './collection/collection.module';
 
 // Maintenance mode: mark user-facing controllers/routes with
 // @UnderMaintenance() (src/common/maintenance). MaintenanceGuard then answers
@@ -76,6 +78,10 @@ import { HealthModule } from './health/health.module';
     UserModule,
     GlobalConfigModule,
     HealthModule,
+
+    // Pokemon OCR & Collection System
+    OcrModule,
+    CollectionModule,
   ],
   controllers: [AppController],
   providers: [

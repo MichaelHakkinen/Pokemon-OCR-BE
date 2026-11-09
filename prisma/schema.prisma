@@ -166,6 +166,8 @@ model User {
 
   UserRefreshToken  UserRefreshToken[]
   UserResetPassword UserResetPassword[]
+  collections       UserCardCollection[]
+  exportConfig      ExportConfig?
 
   @@map("users")
 }
@@ -330,4 +332,104 @@ model MailRelayLog {
   @@index([responseStatus])
   @@index([createdAt])
   @@map("mail_relay_logs")
+}
+
+
+// ==========================================
+// POKEMON TCG SCANNER & COLLECTION MODELS
+// ==========================================
+
+model Set {
+  id          String    @id @default(uuid()) @db.Uuid
+  code        String    @unique @db.VarChar(50) // e.g. "sv2a", "MEW", "SV-P", "151"
+  name        String    @db.VarChar(255)
+  series      String?   @db.VarChar(100)
+  totalCards  Int?
+  releaseYear Int?
+  region      String?   @db.VarChar(50) // "JP", "EN", "ID", "GLOBAL"
+  language    String    @default("en") @db.VarChar(20) // "en", "ja", "id", "ko", "zh"
+  createdAt   DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime? @updatedAt @db.Timestamp(6)
+
+  cards Card[]
+
+  @@index([code])
+  @@index([language])
+  @@map("sets")
+}
+
+model Card {
+  id               String    @id @default(uuid()) @db.Uuid
+  setId            String    @db.Uuid
+  collectorNumber  String    @db.VarChar(50) // "025/165", "TG04/TG30", "025"
+  normalizedNumber String    @db.VarChar(50) // "025", "TG04"
+  rarity           String?   @db.VarChar(50) // Common, Rare Holo, SAR, AR, Promo
+  cardType         String?   @db.VarChar(50) // Pokemon, Trainer, Energy
+  supertype        String?   @db.VarChar(50) // Basic, Stage 1, Stage 2
+  hp               String?   @db.VarChar(10)
+  imageUrl         String?   @db.Text
+  createdAt        DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime? @updatedAt @db.Timestamp(6)
+
+  set             Set                  @relation(fields: [setId], references: [id], onDelete: Cascade)
+  translations    CardTranslation[]
+  userCollections UserCardCollection[]
+
+  @@unique([setId, collectorNumber])
+  @@index([setId])
+  @@index([collectorNumber])
+  @@index([normalizedNumber])
+  @@map("cards")
+}
+
+model CardTranslation {
+  id        String    @id @default(uuid()) @db.Uuid
+  cardId    String    @db.Uuid
+  language  String    @db.VarChar(20) // "en", "ja", "id", "ko", "zh", "fr", "de", "es", "it"
+  name      String    @db.VarChar(255) // "Pikachu", "ピカチュウ", "리자몽", "Dracaufeu"
+  flavorText String?  @db.Text
+  createdAt DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt DateTime? @updatedAt @db.Timestamp(6)
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, language])
+  @@index([cardId])
+  @@index([language])
+  @@index([name])
+  @@map("card_translations")
+}
+
+model UserCardCollection {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  cardId       String    @db.Uuid
+  condition    String    @default("NM") @db.VarChar(50) // Mint, Near Mint, Lightly Played, Played, Damaged
+  grade        String?   @db.VarChar(50) // Raw, PSA 10, BGS 9.5, CGC 10
+  language     String    @default("en") @db.VarChar(20)
+  quantity     Int       @default(1)
+  customFields Json?     // JSONB: dynamic custom survey responses e.g. {"storageBoxId": "BOX-01", "purchasePrice": 250000, "purchaseCurrency": "IDR"}
+  acquiredDate DateTime? @default(now()) @db.Timestamp(6)
+  createdAt    DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime? @updatedAt @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([cardId])
+  @@map("user_card_collections")
+}
+
+model ExportConfig {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String?   @unique @db.Uuid // null = default system template, or user-specific override
+  isEnabled Boolean   @default(true) // Pre-Export Confirmation / Survey Popup toggle
+  fields    Json      // JSONB: array of field definitions [{ key, label, type, options, defaultValue, required }]
+  createdAt DateTime? @default(now()) @db.Timestamp(6)
+  updatedAt DateTime? @updatedAt @db.Timestamp(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("export_configs")
 }

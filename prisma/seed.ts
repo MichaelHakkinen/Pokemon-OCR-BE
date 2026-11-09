@@ -10,6 +10,7 @@ import { moduleRuleSeed } from './seed/module-rule.seed';
 import { userSeed } from './seed/user.seed';
 import { logDetailSeed } from './seed/log-detail.seed';
 import { globalConfigSeed } from './seed/global-config.seed';
+import { seedPokemonCards } from './seed/pokemon-card.seed';
 
 // Seeds run outside Nest, so they create their own client.
 const prisma = new PrismaClient({
@@ -26,6 +27,7 @@ async function main() {
   await adminGroupAccessSeed(prisma);
   await logDetailSeed(prisma);
   await globalConfigSeed(prisma);
+  await seedPokemonCards(prisma);
   console.log('Seeding completed.');
 }
 
